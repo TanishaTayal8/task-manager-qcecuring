@@ -1,0 +1,8 @@
+com\qcecuring\model\Task.class
+com\qcecuring\TaskManagerApplication.class
+com\qcecuring\repository\TaskRepository.class
+com\qcecuring\config\BasicAuthFilter.class
+com\qcecuring\controller\TaskController.class
+com\qcecuring\controller\LogController.class
+com\qcecuring\repository\LogRepository.class
+com\qcecuring\model\AuditLog.class

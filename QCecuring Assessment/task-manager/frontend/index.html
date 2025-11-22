@@ -1,0 +1,217 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Task Manager Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    /* compact styling — dark-ish, responsive */
+    body {font-family: Arial, sans-serif; margin:0; background:#0f1724; color:#e6eef8;}
+    .app {display:flex; min-height:100vh;}
+    .sidebar {width:220px; background:#071029; padding:20px;}
+    .sidebar h2{color:#2ee2a9; margin:0 0 20px;}
+    .nav {margin-top:20px;}
+    .nav button{display:block; width:100%; padding:10px; margin-bottom:8px; background:transparent; color:#bcd; border:1px solid #123; border-radius:6px; cursor:pointer;}
+    .main {flex:1; padding:20px;}
+    .header {display:flex; justify-content:space-between; align-items:center;}
+    .card{background:#071428; padding:16px; border-radius:8px; margin-top:16px;}
+    table{width:100%; border-collapse:collapse;}
+    th,td{padding:8px; text-align:left; border-bottom:1px solid #123;}
+    .actions button{margin-right:6px;}
+    .btn{padding:8px 12px; border-radius:6px; cursor:pointer; border:none;}
+    .green{background:#0f8; color:#012;}
+    .yellow{background:#ffea8a; color:#1a1;}
+    .red{background:#ff6b6b; color:#300;}
+    /* modal */
+    .modal {position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center;}
+    .modal .box{background:#071428; padding:16px; width:90%; max-width:480px; border-radius:8px;}
+    .log-entry{padding:8px; border-radius:6px; margin-bottom:8px;}
+    .log-create{background:#0b3;}
+    .log-update{background:#e6d34a; color:#050;}
+    .log-delete{background:#d9534f;}
+    @media(max-width:700px){
+      .sidebar{display:none;}
+      .main{padding:12px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="sidebar">
+      <h2>Task Manager</h2>
+      <div class="nav">
+        <button id="tab-tasks">Tasks</button>
+        <button id="tab-logs">Audit Logs</button>
+      </div>
+      <div style="margin-top:20px;">
+        <button id="open-create" class="btn green">Create Task</button>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="header">
+        <h1 id="title">Tasks</h1>
+        <div>
+          <input id="search" placeholder="Search by title or description" style="padding:8px;border-radius:6px;margin-right:8px;" />
+          <button id="btn-search" class="btn">Search</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:5px; margin-bottom:15px;">
+  <h2 style="margin:0; color:#3ee4b3;">Welcome, Tanisha 👋</h2>
+  <p style="margin-top:8px; line-height:1.5; color:#d0e2ff;">
+    Manage your tasks, track updates, and review activity logs — all from one place.  
+    Use the sidebar to switch between <b>Tasks</b> and <b>Audit Logs</b>.
+  </p>
+</div>
+
+
+      <div id="panel-tasks" class="card">
+        <div id="tasks-container"></div>
+        <div style="margin-top:12px;">
+          <button id="prev-page" class="btn">Prev</button>
+          <span id="page-indicator">Page 1</span>
+          <button id="next-page" class="btn">Next</button>
+        </div>
+      </div>
+
+      <div id="panel-logs" class="card" style="display:none;">
+        <div id="logs-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="modal">
+    <div class="box">
+      <h3 id="modal-title">Create Task</h3>
+      <div>
+        <label>Title</label><br/>
+        <input id="input-title" style="width:100%; padding:8px; border-radius:6px;" maxlength="100"/><br/><br/>
+        <label>Description</label><br/>
+        <textarea id="input-desc" style="width:100%; padding:8px; border-radius:6px;" maxlength="500"></textarea><br/><br/>
+        <div style="text-align:right;">
+          <button id="cancel" class="btn">Cancel</button>
+          <button id="save" class="btn green">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:18px; text-align:center; font-size:13px; color:#889;">
+  ⚡ Task Manager Dashboard — Built by <b>Tanisha Tayal</b> for QCecuring Technologies
+</div>
+
+
+<script>
+const API_BASE = 'http://localhost:8080/api';
+const AUTH_HDR = 'Basic ' + btoa('admin:password123');
+
+function sanitizeClient(s){ return s.replace(/<.*?>/g,'').trim(); } // basic
+
+let state = { page:1, size:5, q:'' , editId: null };
+
+async function fetchTasks(){
+  const url = `${API_BASE}/tasks?q=${encodeURIComponent(state.q)}&page=${state.page}&size=${state.size}`;
+  const res = await fetch(url, { headers: { 'Authorization': AUTH_HDR } });
+  if(!res.ok){ alert('Error fetching tasks'); return; }
+  const data = await res.json();
+  renderTasks(data.tasks);
+  document.getElementById('page-indicator').innerText = `Page ${data.page} / Total ${data.total}`;
+}
+
+function renderTasks(tasks){
+  const c = document.getElementById('tasks-container');
+  if(tasks.length===0){ c.innerHTML = '<p>No tasks found.</p>'; return; }
+  let html = '<table><thead><tr><th>ID</th><th>Title</th><th>Description</th><th>Created At</th><th>Actions</th></tr></thead><tbody>';
+  tasks.forEach(t=>{
+    html+=`<tr>
+      <td>${t.id}</td>
+      <td>${escapeHtml(t.title)}</td>
+      <td>${escapeHtml(t.description)}</td>
+      <td>${new Date(t.createdAt).toLocaleString()}</td>
+      <td class="actions">
+        <button onclick="openEdit(${t.id},'${encodeURIComponent(t.title)}','${encodeURIComponent(t.description)}')" class="btn">Edit</button>
+        <button onclick="delTask(${t.id})" class="btn red">Delete</button>
+      </td>
+    </tr>`;
+  });
+  html+='</tbody></table>';
+  c.innerHTML = html;
+}
+
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+document.getElementById('open-create').onclick = ()=>{ state.editId=null; document.getElementById('modal-title').innerText='Create Task'; showModal(); }
+document.getElementById('cancel').onclick = hideModal;
+document.getElementById('save').onclick = saveTask;
+document.getElementById('tab-tasks').onclick = ()=>{ showPanel('tasks'); }
+document.getElementById('tab-logs').onclick = ()=>{ showPanel('logs'); loadLogs(); }
+document.getElementById('btn-search').onclick = ()=>{ state.q = document.getElementById('search').value; state.page=1; fetchTasks(); }
+document.getElementById('prev-page').onclick = ()=>{ if(state.page>1){ state.page--; fetchTasks(); } }
+document.getElementById('next-page').onclick = ()=>{ state.page++; fetchTasks(); }
+
+function showPanel(name){
+  document.getElementById('panel-tasks').style.display = name==='tasks' ? 'block' : 'none';
+  document.getElementById('panel-logs').style.display = name==='logs' ? 'block' : 'none';
+  document.getElementById('title').innerText = name==='tasks' ? 'Tasks' : 'Audit Logs';
+}
+
+function showModal(){ document.getElementById('modal').style.display='flex'; document.getElementById('input-title').value=''; document.getElementById('input-desc').value=''; }
+function hideModal(){ document.getElementById('modal').style.display='none'; }
+
+function openEdit(id, tEnc, dEnc){
+  state.editId=id;
+  document.getElementById('modal-title').innerText='Edit Task';
+  document.getElementById('input-title').value = decodeURIComponent(tEnc);
+  document.getElementById('input-desc').value = decodeURIComponent(dEnc);
+  showModal();
+}
+
+async function saveTask(){
+  let title = sanitizeClient(document.getElementById('input-title').value);
+  let desc = sanitizeClient(document.getElementById('input-desc').value);
+  if(!title || !desc){ alert('Title and description required'); return; }
+  if(title.length>100 || desc.length>500){ alert('Length exceeded'); return; }
+  const payload = { title, description: desc };
+  const url = state.editId ? `${API_BASE}/tasks/${state.editId}` : `${API_BASE}/tasks`;
+  const method = state.editId ? 'PUT' : 'POST';
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type':'application/json', 'Authorization': AUTH_HDR },
+    body: JSON.stringify(payload)
+  });
+  if(!res.ok){ const err = await res.json().catch(()=>({error:'Unknown'})); alert('Error: '+(err.error||'Failed')); return; }
+  hideModal(); fetchTasks();
+}
+
+async function delTask(id){
+  if(!confirm('Delete task?')) return;
+  const res = await fetch(`${API_BASE}/tasks/${id}`, { method:'DELETE', headers: { 'Authorization': AUTH_HDR }});
+  if(res.ok) fetchTasks(); else alert('Delete failed');
+}
+
+async function loadLogs(){
+  const res = await fetch(`${API_BASE}/logs`, { headers: { 'Authorization': AUTH_HDR }});
+  if(!res.ok){ alert('Failed to load logs'); return; }
+  const logs = await res.json();
+  const c = document.getElementById('logs-container');
+  if(!logs.length){ c.innerHTML='<p>No logs yet.</p>'; return; }
+  let html='';
+  logs.forEach(l=>{
+    let css=''; let label='';
+    if(l.action==='Create Task'){ css='log-create'; label='Create';}
+    else if(l.action==='Update Task'){ css='log-update'; label='Update';}
+    else if(l.action==='Delete Task'){ css='log-delete'; label='Delete';}
+    html += `<div class="log-entry ${css}">
+      <strong>${new Date(l.timestamp).toLocaleString()}</strong> &nbsp; <em>${label}</em> &nbsp; Task ID: ${l.taskId || '-'}<br/>
+      <pre style="white-space:pre-wrap">${escapeHtml(String(l.updatedContent || ''))}</pre>
+    </div>`;
+  });
+  c.innerHTML = html;
+}
+
+// initial load
+fetchTasks();
+</script>
+</body>
+</html>
